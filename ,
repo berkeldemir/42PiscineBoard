@@ -1,0 +1,339 @@
+<?php
+// Configuration
+$CLIENT_ID = 'u-s4t2ud-dacbc7c5cd5274fa748ab5578300699bea8467a79afbc98caccf20cbf7a91d0b';
+$CLIENT_SECRET = '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';
+$CACHE_FILE = 'avatar_cache.json';
+$INPUTS_FILE = 'inputs.txt';
+
+// API Token Management
+function get_api_token() {
+    global $CLIENT_ID, $CLIENT_SECRET;
+    $ch = curl_init('https://api.intra.42.fr/oauth/token');
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST => true,
+        CURLOPT_POSTFIELDS => http_build_query([
+            'grant_type' => 'client_credentials',
+            'client_id' => $CLIENT_ID,
+            'client_secret' => $CLIENT_SECRET
+        ])
+    ]);
+    $response = json_decode(curl_exec($ch), true);
+    return $response['access_token'] ?? null;
+}
+
+// Avatar URL Caching & User Existence
+function get_avatar_url($username) {
+    global $CACHE_FILE;
+    static $cache = null;
+    
+    if ($cache === null) {
+        $cache = file_exists($CACHE_FILE)
+            ? json_decode(file_get_contents($CACHE_FILE), true)
+            : [];
+    }
+
+    if (!array_key_exists($username, $cache)) {
+        $token = get_api_token();
+        $ch = curl_init('https://api.intra.42.fr/v2/users/' . rawurlencode($username));
+        curl_setopt_array($ch, [
+            CURLOPT_HTTPHEADER => ["Authorization: Bearer $token"],
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_FAILONERROR => true
+        ]);
+        $response = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        
+        if ($httpCode === 200) {
+            $data = json_decode($response, true);
+            $cache[$username] = $data['image']['versions']['small'] ?? null;
+        } else {
+            $cache[$username] = null;
+        }
+
+        file_put_contents($CACHE_FILE, json_encode($cache), LOCK_EX);
+    }
+
+    return $cache[$username];
+}
+
+// Helper: send a browser alert and go back
+function send_error($message) {
+    echo '<!DOCTYPE html><html><body>';
+    echo '<script>alert("' . addslashes($message) . '"); window.history.back();</script>';
+    echo '</body></html>';
+    exit;
+}
+
+// Message Handling
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $username = isset($_POST['username']) ? trim($_POST['username']) : '';
+    $message = isset($_POST['message']) ? trim($_POST['message']) : '';
+
+    if ($username === '' || $message === '') {
+        send_error('Username and message cannot be empty.');
+    }
+
+    // Check duplicate
+    $existing_usernames = [];
+    if (file_exists($INPUTS_FILE)) {
+        foreach (file($INPUTS_FILE, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $line) {
+            $parts = explode(' - ', $line);
+            if (count($parts) >= 1) {
+                $existing_usernames[] = $parts[0];
+            }
+        }
+    }
+
+    if (in_array($username, $existing_usernames)) {
+        send_error('This user has already posted a message.');
+    }
+
+    // Validate Intra user
+    $avatar = get_avatar_url($username);
+    if ($avatar === null) {
+        send_error('Username not found on intra.42.fr.');
+    }
+
+    // Append to file
+    $ip = $_SERVER['REMOTE_ADDR'];
+    file_put_contents($INPUTS_FILE, "$username - $message - $ip\n", FILE_APPEND | LOCK_EX);
+
+    // Reload to avoid resubmission
+    header('Location: ' . $_SERVER['REQUEST_URI']);
+    exit();
+}
+
+// Load messages for display
+$messages = [];
+if (file_exists($INPUTS_FILE)) {
+    foreach (file($INPUTS_FILE, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $line) {
+        $parts = explode(' - ', $line, 3);
+        if (count($parts) >= 2) {
+            $messages[] = ['username' => $parts[0], 'message' => $parts[1]];
+        }
+    }
+}
+shuffle($messages);
+?>
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>42 Message Board</title>
+    <style>
+	* {
+		font-size: 24px;
+	 }
+        :root {
+            --header-height: 80px;
+        }
+
+	body {
+	    transition: opacity 0.8s ease-in;
+            margin: 0;
+	    margin-top: 15px;
+	    background: #111;
+            font-family: 'Segoe UI', system-ui, sans-serif;
+	}
+
+        /* Header/Send Message Container */
+        .header {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+	    height: var(--header-height) * 1.2;
+            background: #18181888;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 8px 60px rgba(0,0,0,0.1);
+            z-index: 1000;
+            transition: all 0.3s ease;
+            overflow: hidden;
+        }
+
+        .header form {
+            padding: 20px 10%;
+            display: grid;
+            grid-template-columns: 150px 1fr auto;
+            gap: 15px;
+            max-width: 90%;
+            margin: 0 auto;
+        }
+
+        /* Messages Grid */
+        .messages-container {
+            padding: calc(var(--header-height) + 15px) 2% 10px;
+	    display: flex;
+	    flex-wrap: wrap;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            grid-auto-rows: auto;
+            gap: 30px;
+            width: 100%;
+            box-sizing: border-box;
+	}
+
+	.username {margin-top: auto;}
+
+        /* Message Bubble */
+	.bubble {
+	    flex: 1 1 300px;
+            position: relative;
+            padding: 25px;
+            border-radius: 20px;
+            background: linear-gradient(145deg, rgba(255,255,255,0.95), rgba(245,245,245,0.95));
+            box-shadow: 0 5px 25px rgba(0,0,0,0.08);
+            transition: transform 0.2s ease;
+            min-height: 120px;
+            display: flex;
+            flex-direction: column;
+
+	opacity: 0;
+	transform: translateY(20px);
+	animation: fadeInBubble 0.6s ease forwards;
+
+	}
+
+        .bubble:hover {
+            transform: translateY(-3px);
+        }
+
+        /* Bubble Content: wrap long text without altering layout */
+	.bubble-content {
+    		overflow-wrap: break-word;
+    		word-break: normal;
+		padding-bottom: 100px;
+	}
+
+        /* Profile Images */
+        .profile-img {
+            position: absolute;
+            right: 20px;
+            bottom: 20px;
+            width: 80px;
+            height: 80px;
+            border-radius: 18px;
+            border: 3px solid white;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.15);
+            object-fit: cover;
+            transition: transform 0.3s ease;
+        }
+
+        .profile-img:hover {
+            transform: scale(1.50);
+        }
+
+        /* Form Elements */
+        input, button {
+            border: none;
+            border-radius: 12px;
+            padding: 15px;
+            font-size: 1em;
+            transition: all 0.2s ease;
+        }
+
+        input {
+            background: rgba(2,2,2,0.9);
+            color: #ccc;
+            border: 1px solid rgba(203,213,225,0.4);
+        }
+
+        input:focus {
+            outline: none;
+            border-color: #818cf8;
+            box-shadow: 0 0 0 3px rgba(129,140,248,0.2);
+        }
+
+        button {
+            background: #2dc4a6;
+            color: white;
+            font-weight: 600;
+            cursor: pointer;
+            min-width: 150px;
+        }
+
+        button:hover {
+            background: #4f46e5;
+            transform: translateY(-1px);
+	}
+
+.centered-container {
+  display: flex;
+  justify-content: center; /* Horizontal center */
+  align-items: center;     /* Vertical center */
+  height: 300px;           /* Or whatever height you want */
+  border: 2px dashed #ccc; /* Just to see the container */
+}
+
+.centered-container img {
+  max-width: 100%;
+  max-height: 100%;
+  margin: 0 auto;
+}
+
+        @media (max-width: 768px) {
+            .header form {
+                grid-template-columns: 1fr;
+                padding: 20px;
+            }
+
+            .header {
+                height: 120px;
+            }
+
+            .header:hover {
+                height: 240px;
+            }
+	}
+
+	@keyframes fadeInBubble {
+   	 to {
+        opacity: 1;
+        transform: translateY(0);
+    	}
+
+}
+    </style>
+</head>
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+    const bubbles = document.querySelectorAll(".bubble");
+    bubbles.forEach((bubble, index) => {
+        bubble.style.animationDelay = `${index * 0.1}s`;
+    });
+});
+</script>
+<body>
+    <header class="header">
+        <form method="post" autocomplete="off">
+            <input type="text" name="username" placeholder="Intra login" required>
+            <input type="text" name="message" placeholder="Your message (one message per pisciner)" required>
+            <button type="submit">Post Message</button>
+        </form>
+    </header>
+
+    <div class="messages-container">
+
+	<div class="bubble" style="background: #fff">
+		<div class="bubble-content centered-container" style="padding:0px; margin:0px; background-color:#fff;">
+			<img src="Nisan2025.png" alt="Nisan2025">
+		</div>
+	</div>
+	<?php foreach ($messages as $msg):
+            $hue = rand(0, 360);
+	?>
+        <div class="bubble" style="background: linear-gradient(145deg, hsl(<?= $hue ?> 90% 96%), hsl(<?= $hue ?> 80% 92%))">
+            <div class="bubble-content">
+                <strong class="msg"><?= htmlspecialchars($msg['message']) ?></strong>
+	    </div>
+	    <span class="username"><?= htmlspecialchars($msg['username']) ?></span>
+	<img class="profile-img"
+                 src="<?= htmlspecialchars(get_avatar_url($msg['username'])) ?>"
+                 alt="<?= htmlspecialchars($msg['username']) ?>"
+                 onerror="this.style.display='none'">
+        </div>
+        <?php endforeach; ?>
+    </div>
+</body>
+</html>
+
