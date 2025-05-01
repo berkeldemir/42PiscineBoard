@@ -19,6 +19,20 @@ function send_error($message) {
     exit;
 }
 
+$tutors = ['beldemir', 'ihancer', 'aozkaya', 'fsoymaz', 'hbayram', 'emgul', 'elkavak'];
+$tutors_color = 'linear-gradient(145deg, #d4af37, #f1c40f, #e0b240, #c89e2b);';
+
+function get_user_color($username, $special_users, $special_user_color) {
+    if (in_array($username, $special_users)) {
+        return $special_user_color;
+    }
+
+    srand(crc32($username));
+    $hue = rand(0, 360);
+
+    return "linear-gradient(145deg, hsl($hue 90% 96%), hsl($hue 80% 92%))";
+}
+
 function get_api_token() {
     global $CLIENT_ID, $CLIENT_SECRET;
     
@@ -224,7 +238,7 @@ shuffle($messages);
 <!DOCTYPE html>
 <html>
 <head>
-    <title>42 Message Board</title>
+    <title>42 Piscine Board</title>
     <style>
 	* {
 		font-size: 28px;
@@ -318,9 +332,9 @@ shuffle($messages);
             padding: calc(var(--header-height) + 15px) 2% 10px;
 	    display: flex;
 	    flex-wrap: wrap;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+	    /* grid-template-columns: repeat(auto-fit, minmax(5000px, 1fr)); */
             grid-auto-rows: auto;
-            gap: 30px;
+            gap: 20px;
             width: 100%;
             box-sizing: border-box;
 	}
@@ -329,7 +343,7 @@ shuffle($messages);
 
         /* Message Bubble */
 	.bubble {
-	    flex: 1 1 300px;
+	    flex: 1 1 500px;
             position: relative;
             padding: 25px;
             border-radius: 20px;
@@ -490,9 +504,9 @@ document.addEventListener("DOMContentLoaded", () => {
 		</div>
 	</div>
 	<?php foreach ($messages as $msg):
-            $hue = rand(0, 360);
+            $color = get_user_color($msg['username'], $tutors, $tutors_color);
 	?>
-        <div class="bubble" style="background: linear-gradient(145deg, hsl(<?= $hue ?> 90% 96%), hsl(<?= $hue ?> 80% 92%))">
+		<div class="bubble" style="background: <?= $color ?>;">
             <div class="bubble-content">
                 <strong class="msg"><?= htmlspecialchars($msg['message']) ?></strong>
 	    </div>
