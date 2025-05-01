@@ -1,5 +1,8 @@
 <?php
 session_start();
+if (session_status() !== PHP_SESSION_ACTIVE) {
+    die('Session başlatılamadı!');
+}
 
 // Configuration
 $CLIENT_ID = 'u-s4t2ud-f670ca775e8d1cf47135dc36afd07231710cefc84c58bf0318d8660d7126cdc5';
@@ -14,6 +17,25 @@ function send_error($message) {
     echo '<script>alert("' . addslashes($message) . '"); window.history.back();</script>';
     echo '</body></html>';
     exit;
+}
+
+function get_api_token() {
+    global $CLIENT_ID, $CLIENT_SECRET;
+    
+    $ch = curl_init('https://api.intra.42.fr/oauth/token');
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST => true,
+        CURLOPT_POSTFIELDS => http_build_query([
+            'grant_type' => 'client_credentials',
+            'client_id' => $CLIENT_ID,
+            'client_secret' => $CLIENT_SECRET
+        ])
+    ]);
+    
+    $response = curl_exec($ch);
+    $data = json_decode($response, true);
+    return $data['access_token'] ?? null;
 }
 
 function get_avatar_url($username) {
@@ -160,7 +182,7 @@ if ($username === '' || $message === '') {
     $existing_usernames = [];
     if (file_exists($INPUTS_FILE)) {
         foreach (file($INPUTS_FILE, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $line) {
-            $parts = explode(' - ', $line);
+	$parts = explode(' ||| ', $line);
             if (count($parts) >= 1) {
                 $existing_usernames[] = $parts[0];
             }
@@ -179,10 +201,10 @@ if ($username === '' || $message === '') {
 
     // Append to file
     $ip = $_SERVER['REMOTE_ADDR'];
-    file_put_contents($INPUTS_FILE, "$username - $message - $ip\n", FILE_APPEND | LOCK_EX);
+    file_put_contents($INPUTS_FILE, "$username ||| $message ||| $ip\n", FILE_APPEND | LOCK_EX);
 
     // Reload to avoid resubmission
-    header('Location: ' . $_SERVER['REQUEST_URI']);
+    header('Location: /');
     exit();
 }
 
@@ -190,7 +212,7 @@ if ($username === '' || $message === '') {
 $messages = [];
 if (file_exists($INPUTS_FILE)) {
     foreach (file($INPUTS_FILE, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $line) {
-        $parts = explode(' - ', $line, 3);
+        $parts = explode(' ||| ', $line, 3);
         if (count($parts) >= 2) {
             $messages[] = ['username' => $parts[0], 'message' => $parts[1]];
         }
@@ -206,14 +228,18 @@ shuffle($messages);
     <style>
 	* {
 		font-size: 28px;
+		text-decoration: none;
 	 }
+	a {
+		color: #111;
+	}
         :root {
             --header-height: 120px;
         }
 
 	body {
 	    transition: opacity 0.8s ease-in;
-            margin: 0;
+	    margin: 0;
 	    margin-top: 15px;
 	    background: #111;
             font-family: 'Segoe UI', system-ui, sans-serif;
@@ -451,7 +477,7 @@ document.addEventListener("DOMContentLoaded", () => {
         <a href="<?= $authUrl ?>" class="login-button">Continue with 42</a>
     <?php else: ?>
 	<form method="post">
-	<input type="text" name="message" placeholder="<?= htmlspecialchars($_SESSION['user']['username']) ?>, leave a message to piscine!" required>
+	<input type="text" name="message" placeholder="<?= htmlspecialchars($_SESSION['user']['username']) ?>, leave a (1) message to piscine!" required>
             <button type="submit">Post it!</button>
 	</form>
     <?php endif; ?>
@@ -470,13 +496,26 @@ document.addEventListener("DOMContentLoaded", () => {
             <div class="bubble-content">
                 <strong class="msg"><?= htmlspecialchars($msg['message']) ?></strong>
 	    </div>
-	    <span class="username"><?= htmlspecialchars($msg['username']) ?></span>
+	    <a class="username" href="https://profile.intra.42.fr/users/<?= htmlspecialchars($msg['username'])?>"><?= htmlspecialchars($msg['username']) ?></a>
+	    <a href="https://profile.intra.42.fr/users/<?= htmlspecialchars($msg['username'])?>">
 	<img class="profile-img"
                  src="<?= htmlspecialchars(get_avatar_url($msg['username'])) ?>"
                  alt="<?= htmlspecialchars($msg['username']) ?>"
                  onerror="this.style.display='none'">
-        </div>
+	</a>
+	</div>
         <?php endforeach; ?>
+    </div>
+    <div style="
+	position: fixed;
+    bottom: 10px;
+    left: 0;
+    right: 0;
+    text-align: center;
+    font-size: 12px;
+    color: #666;
+    font-family: inherit;">
+        created by beldemir
     </div>
 </body>
 </html>
