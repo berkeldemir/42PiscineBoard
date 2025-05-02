@@ -7,7 +7,7 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
 // Configuration
 $CLIENT_ID = 'u-s4t2ud-f670ca775e8d1cf47135dc36afd07231710cefc84c58bf0318d8660d7126cdc5';
 $CLIENT_SECRET = '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';
-$REDIRECT_URI = 'http://10.11.3.10:5696/callback'; // .php olmadan
+$REDIRECT_URI = 'http://10.19.12.75:5696/callback'; // .php olmadan
 $CACHE_FILE = 'avatar_cache.json';
 $INPUTS_FILE = 'inputs.txt';
 
